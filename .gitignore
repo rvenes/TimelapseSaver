@@ -1,5 +1,25 @@
+# Ignorer byggmapper og midlertidige filer
+build/
+dist/
+distIntelMac/
+*.spec
+
+# Ignorer virtuelle miljøer
+venv/
+.venv/
+
+# Ignorer Python-kompilerte filer
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Ignorer loggfiler og midlertidige filer
 *.log
-dist/
-build/
+*.tmp
+*.swp
+*.bak
+
+# Ignorer systemspesifikke filer
+.DS_Store
+Thumbs.db
