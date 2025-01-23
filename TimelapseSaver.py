@@ -1,12 +1,15 @@
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, Menu, Toplevel
+from PIL import Image, ImageTk
 import threading
 import time
 import requests
 import os
 import webbrowser
+import io
+from datetime import datetime
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 class TimelapseSaver:
     def __init__(self, root):
@@ -18,14 +21,17 @@ class TimelapseSaver:
         self.save_path = os.getcwd()
         self.interval = 60  # Default to 60 seconds
         self.running = False
+        self.original_image = None
+        self.popup_window = None
 
         # Menu
-        menubar = tk.Menu(self.root)
-        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar = Menu(self.root)
+
+        file_menu = Menu(menubar, tearoff=0)
         file_menu.add_command(label="Exit", command=self.root.quit)
         menubar.add_cascade(label="File", menu=file_menu)
 
-        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu = Menu(menubar, tearoff=0)
         help_menu.add_command(label="Changelog", command=self.show_changelog)
         help_menu.add_command(label="About", command=self.show_about)
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -55,9 +61,17 @@ class TimelapseSaver:
         self.stop_button = tk.Button(root, text="Stop", command=self.stop_capture, state=tk.DISABLED)
         self.stop_button.grid(row=3, column=1, padx=5, pady=10)
 
-        tk.Button(root, text="Test", command=self.test_capture).grid(row=4, column=0, padx=5, pady=10)
+        self.load_button = tk.Button(root, text="Load Picture", command=self.load_picture)
+        self.load_button.grid(row=4, column=0, padx=5, pady=10)
 
         tk.Button(root, text="Exit", command=root.quit).grid(row=4, column=1, padx=5, pady=10)
+
+        self.image_label = tk.Label(root, cursor="hand2")
+        self.image_label.grid(row=5, column=0, columnspan=3, pady=10)
+        self.image_label.bind("<Button-1>", self.show_popup_image)
+
+        self.info_label = tk.Label(root, text="", justify="left")
+        self.info_label.grid(row=6, column=0, columnspan=3, pady=10)
 
     def browse_directory(self):
         selected_path = filedialog.askdirectory(initialdir=self.save_path)
@@ -66,16 +80,55 @@ class TimelapseSaver:
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, self.save_path)
 
-    def test_capture(self):
+    def load_picture(self):
         try:
             response = requests.get(self.url_entry.get(), stream=True)
             response.raise_for_status()
-            test_image_path = os.path.join(self.save_path, "test_image.jpeg")
-            with open(test_image_path, "wb") as f:
-                f.write(response.content)
-            tk.messagebox.showinfo("Success", f"Test image saved to {test_image_path}")
+            image_data = response.content
+            image = Image.open(io.BytesIO(image_data))
+
+            # Store the original image
+            self.original_image = image.copy()
+
+            # Resize for display
+            original_size = image.size
+            image.thumbnail((640, 360))
+
+            # Convert to Tkinter-compatible image
+            tk_image = ImageTk.PhotoImage(image)
+            self.image_label.config(image=tk_image)
+            self.image_label.image = tk_image
+
+            # Update info label
+            size_kb = len(image_data) / 1024
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.info_label.config(
+                text=(
+                    f"Image Info:\n"
+                    f"- Original Size: {original_size[0]}x{original_size[1]} px\n"
+                    f"- Displayed Size: {image.width}x{image.height} px\n"
+                    f"- File Size: {size_kb:.2f} KB\n"
+                    f"- Loaded At: {timestamp}"
+                )
+            )
+
+            # Change button text to Reload
+            self.load_button.config(text="Reload Picture")
+
         except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to capture test image: {e}")
+            tk.messagebox.showerror("Error", f"Failed to load picture: {e}")
+
+    def show_popup_image(self, event):
+        if self.original_image:
+            if self.popup_window and self.popup_window.winfo_exists():
+                self.popup_window.destroy()
+            else:
+                self.popup_window = Toplevel(self.root)
+                self.popup_window.title("Full Image")
+                tk_image = ImageTk.PhotoImage(self.original_image)
+                label = tk.Label(self.popup_window, image=tk_image)
+                label.image = tk_image
+                label.pack()
 
     def start_capture(self):
         try:
@@ -108,7 +161,7 @@ class TimelapseSaver:
             try:
                 response = requests.get(self.image_url, stream=True)
                 response.raise_for_status()
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                timestamp = time.strftime("%Y%m%d_%H%M:%S")
                 image_path = os.path.join(self.save_path, f"image_{timestamp}.jpeg")
                 with open(image_path, "wb") as f:
                     f.write(response.content)
@@ -117,23 +170,11 @@ class TimelapseSaver:
                 tk.messagebox.showerror("Error", f"Failed to capture image: {e}")
             time.sleep(self.interval)
 
-    def show_changelog(self):
-        changelog = (
-            "Changelog:\n"
-            "- Added menu with File and Help options.\n"
-            "- Introduced Changelog and About dialogs.\n"
-            "- Set default interval to 60 seconds.\n"
-            "- Added support for donations via PayPal and Bitcoin.\n"
-            f"- Current version: {VERSION}"
-        )
-        self.show_text_dialog("Changelog", changelog)
-
     def show_about(self):
-        about_frame = tk.Toplevel(self.root)
+        about_frame = Toplevel(self.root)
         about_frame.title("About")
 
-        tk.Label(about_frame, text=f"TimelapseSaver v{VERSION}\n", wraplength=400, justify="left").pack(pady=5)
-        tk.Label(about_frame, text="This application is licensed under the GNU General Public License.", wraplength=400, justify="left").pack(pady=5)
+        tk.Label(about_frame, text=f"TimelapseSaver v{VERSION}\n\nThis application is licensed under the GNU General Public License.", wraplength=400, justify="left").pack(pady=5)
         tk.Label(about_frame, text="If you would like to support development, you are welcome to donate:", wraplength=400, justify="left").pack(pady=5)
 
         tk.Button(about_frame, text="Donate via PayPal", fg="blue", cursor="hand2", command=lambda: webbrowser.open("https://paypal.me/rvenes?country.x=NO&locale.x=en_US")).pack(pady=5)
@@ -144,8 +185,6 @@ class TimelapseSaver:
         tk.Button(bitcoin_frame, text="Copy", command=lambda: self.copy_to_clipboard("3CEUbAnKZk3qLCARe5eDjq9sDgnZDZY4jg")).pack(side=tk.RIGHT)
         bitcoin_frame.pack(pady=5)
 
-        tk.Label(about_frame, text="GitHub: rvenes", fg="blue", cursor="hand2", wraplength=400, justify="left", command=lambda: webbrowser.open("https://github.com/rvenes")).pack(pady=5)
-
         tk.Button(about_frame, text="Close", command=about_frame.destroy).pack(pady=10)
 
     def copy_to_clipboard(self, text):
@@ -153,14 +192,16 @@ class TimelapseSaver:
         self.root.clipboard_append(text)
         self.root.update()
 
-    def show_text_dialog(self, title, content):
-        dialog = tk.Toplevel(self.root)
-        dialog.title(title)
-        text_widget = tk.Text(dialog, wrap="word", height=10, width=50)
-        text_widget.insert("end", content)
-        text_widget.configure(state="disabled")
-        text_widget.pack(pady=10)
-        tk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
+    def show_changelog(self):
+        changelog = (
+            "Changelog:\n"
+            "- Version 1.0.2:\n"
+            "  - Added \"Load Picture\" with EXIF display and resize.\n"
+            "  - Full image popup with click functionality.\n"
+            "  - About and Changelog in Help menu.\n"
+            "  - Copy Bitcoin address and clickable PayPal link in About."
+        )
+        tk.messagebox.showinfo("Changelog", changelog)
 
 if __name__ == "__main__":
     root = tk.Tk()

@@ -1,8 +1,11 @@
-# Ignorer byggmapper og midlertidige filer
+# Ignorer byggmapper
 build/
 dist/
 distIntelMac/
 *.spec
+
+# Tillat kun 1.0.1 i dist
+!dist/TimelapseSaver_1.0.1.exe
 
 # Ignorer virtuelle miljøer
 venv/
